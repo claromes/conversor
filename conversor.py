@@ -247,9 +247,9 @@ def build_epub(meta, chapters, cover_path, out_path):
     book = epub.EpubBook()
     book.set_identifier(f"pdf2epub-{abs(hash(out_path)):08x}")
     book.set_title(meta["title"] or Path(out_path).stem)
-    book.set_language("pt")
+
     if meta["author"]:
-        book.add_author(meta["author"])
+        book.add_metadata("DC", "creator", "", {})
 
     cover_item = None
     if cover_path:
@@ -351,9 +351,9 @@ def main():
     p = argparse.ArgumentParser(description="PDF to EPUB for CrossPoint 1.1.1")
     p.add_argument("pdfs", nargs="+")
     p.add_argument("-o", "--output", default=".")
-    p.add_argument("--cover", default="", help="Cover image (jpg/png)")
-    p.add_argument("--title", default="")
-    p.add_argument("--author", default="")
+    p.add_argument("-c", "--cover", default="", help="Cover image (jpg/png)")
+    p.add_argument("-t", "--title", default="")
+    p.add_argument("-a", "--author", default="")
     args = p.parse_args()
 
     os.makedirs(args.output, exist_ok=True)

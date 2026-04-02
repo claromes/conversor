@@ -107,7 +107,7 @@ def blocks_from_page(page, body_size, two_col):
         is_heading = dominant_size >= body_size * HEADING_RATIO
         blocks.append(
             {
-                "text": text,
+                "lines": b["lines"],
                 "heading": is_heading,
                 "x0": b["bbox"][0],
                 "y0": b["bbox"][1],
@@ -158,14 +158,74 @@ EPUB_CSS = (
 )
 
 
-def blocks_to_html(blocks):
+def span_to_html(span, base_size, base_y):
     import html as hl
 
+    text = hl.escape(span["text"])
+
+    size = span.get("size", base_size)
+    bbox = span.get("bbox", [0, 0, 0, 0])
+    y = bbox[1]
+
+    flags = span.get("flags", 0)
+    is_italic = flags & 2
+    is_bold = flags & 1
+
+    is_sup = False
+    is_sub = False
+
+    # via rise
+    rise = span.get("rise", 0)
+    if rise > 1:
+        is_sup = True
+    elif rise < -1:
+        is_sub = True
+
+    # fallback
+    else:
+        if size < base_size * 0.8:
+            if y < base_y - 1:
+                is_sup = True
+            elif y > base_y + 1:
+                is_sub = True
+
+    # tags
+    if is_sup:
+        text = f"<sup>{text}</sup>"
+    elif is_sub:
+        text = f"<sub>{text}</sub>"
+
+    if is_italic:
+        text = f"<i>{text}</i>"
+    if is_bold:
+        text = f"<b>{text}</b>"
+
+    return text
+
+
+def blocks_to_html(blocks):
     parts = []
+
     for b in blocks:
-        text = hl.escape(b["text"])
+        html_spans = []
+
+        for line in b.get("lines", []):
+            spans = line.get("spans", [])
+            if not spans:
+                continue
+
+            base_span = max(spans, key=lambda s: s["size"])
+            base_size = base_span["size"]
+            base_y = base_span["bbox"][1]
+
+            for span in spans:
+                if span["text"].strip():
+                    html_spans.append(span_to_html(span, base_size, base_y))
+
+        text = " ".join(html_spans)
         tag = "h2" if b["heading"] else "p"
         parts.append(f"<{tag}>{text}</{tag}>")
+
     return "\n".join(parts)
 
 
@@ -196,15 +256,23 @@ def build_epub(meta, chapters, cover_path, out_path):
         with open(cover_path, "rb") as f:
             cover_data = f.read()
         book.set_cover("cover.jpg", cover_data, create_page=False)
-        cover_item = epub.EpubHtml(title="Cover", file_name="cover.xhtml", lang="pt")
+        cover_item = epub.EpubHtml(
+            title=meta["title"], file_name="cover.xhtml", lang="pt"
+        )
         cover_item.set_content(
-            b"<?xml version='1.0' encoding='utf-8'?>\n"
-            b"<!DOCTYPE html>\n"
-            b'<html xmlns="http://www.w3.org/1999/xhtml">'
-            b"<head><title>Cover</title></head>"
-            b'<body style="margin:0;padding:0;">'
-            b'<img src="cover.jpg" alt="cover" style="width:100%;height:100%;"/>'
-            b"</body></html>"
+            f"""<?xml version='1.0' encoding='utf-8'?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>{meta["title"]}</title>
+</head>
+<body style="margin:0;padding:0;text-align:center;">
+
+<img src="cover.jpg" alt="cover" style="width:100%;height:auto;background:transparent;"/>
+
+</body></html>""".encode(
+                "utf-8"
+            )
         )
         book.add_item(cover_item)
 
@@ -221,9 +289,16 @@ def build_epub(meta, chapters, cover_path, out_path):
         book.add_item(c)
         epub_chapters.append(c)
 
-    book.toc = tuple(
-        epub.Link(c.file_name, c.title, f"n{i}") for i, c in enumerate(epub_chapters)
-    )
+    toc_items = []
+
+    if cover_item:
+        toc_items.append(epub.Link("cover.xhtml", meta["title"], "cover"))
+
+    for i, c in enumerate(epub_chapters):
+        toc_items.append(epub.Link(c.file_name, c.title, f"n{i}"))
+
+    book.toc = tuple(toc_items)
+
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
     # Cover first in spine so the reader opens on it

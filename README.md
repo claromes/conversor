@@ -1,6 +1,6 @@
 # Conversor
 
-.pdf to .epub for Xteink X4
+.pdf to .epub for Xteink X4 (CrossPoint Reader firmware)
 
 ## dev
 
